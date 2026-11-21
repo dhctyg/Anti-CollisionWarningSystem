@@ -715,6 +715,21 @@
             </File>
           </Files>
         </Group>
+        <Group>
+          <GroupName>System</GroupName>
+          <Files>
+            <File>
+              <FileName>i2c_bus.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\System\i2c_bus.c</FilePath>
+            </File>
+            <File>
+              <FileName>i2c_bus.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\System\i2c_bus.h</FilePath>
+            </File>
+          </Files>
+        </Group>
       </Groups>
     </Target>
   </Targets>
