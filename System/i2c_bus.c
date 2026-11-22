@@ -27,6 +27,15 @@ static I2c_MsgSlotTypeDef i2c_msg_slot[I2C_DEVICE_COUNT] =
 
 uint8_t I2cBus_SendReg(const I2c_SendRequestTypeDef *message)
 {
-    
+    /* 检查消息槽是否空闲，若空闲则直接插入，返回 1 表示发送成功 */
+    if (i2c_msg_slot[message.device].slot_state = I2C_SLOT_IDLE)
+    {
+
+    }
+    /* 若为正在发送状态，延时后重试，若超时则返回 0 表示发送失败 */
+    else
+    {
+
+    }
 };
 
