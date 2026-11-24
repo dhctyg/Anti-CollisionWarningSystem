@@ -5,16 +5,19 @@
 #include <string.h> /* 引入 memcpy 函数 */
 #include "bsp.h"
 
-#define I2C_SLOT_WAIT_TIMEOUT 5U
-#define I2C_MSG_MAX 32U
-#define I2C_DEVICE_COUNT 2U
+#define I2C_SLOT_WAIT_TIMEOUT   5U
+#define I2C_MSG_MAX             32U
+/* I2C 地址定义 */
+#define I2C_ADDRESS_OLED        0X3C
+#define I2C_ADDRESS_MPU6050     0x68
 
 /* 从设备列表 */
 typedef enum
 {
-    I2C_DEVICE_OLED = 0x3C,
-    I2C_DEVICE_MPU6050 = 0x68,
-} I2c_DeviceIDTypeDef;
+    I2C_DEVICE_OLED = 0,
+    I2C_DEVICE_MPU6050,
+    I2C_DEVICE_COUNT
+} I2c_DeviceTypeDef;
 
 /* 消息状态列表 */
 typedef enum
@@ -42,13 +45,14 @@ typedef struct
     I2c_DeviceTypeDef device;
     uint8_t address;
     uint8_t reg;
+    uint16_t length;
 } I2c_ReadRequestTypeDef;
 
 /* TaskHandle 函数主要用于槽内消息的发送与状态更新以及错误处理 */
 void I2cBus_TaskHandle(void);
 /* SendReg 和 ReadReg 函数主要用于向槽内更新信息 */
 uint8_t I2cBus_SendReg(const I2c_SendRequestTypeDef *message);
-uint8_t I2cBus_ReadReg(const I2c_SendRequestTypeDef *message);
+uint8_t I2cBus_ReadReg(const I2c_ReadRequestTypeDef *message);
 /* GetReadMsg 用于读取最近一次向某设备读取的数据 */
 uint16_t I2cBus_GetReadMsg(uint8_t address, uint8_t *buffer);
 /* GetMsgTime 用于读取最近一次读取数据更新的时间，用于判断两次读取的数据是否相同，还应包含相同值的二次判断 */
