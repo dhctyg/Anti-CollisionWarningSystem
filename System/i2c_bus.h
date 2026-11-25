@@ -19,14 +19,14 @@ typedef enum
     I2C_DEVICE_COUNT
 } I2c_DeviceTypeDef;
 
-/* 消息状态列表 */
+/* 消息槽状态列表 */
 typedef enum
 {
     I2C_SLOT_IDLE,
     I2C_SLOT_WAIT_SEND,
     I2C_SLOT_SENDING,
-    I2C_SLOT_WAIT_REPLY,
-    I2C_SLOT_DONE,
+    I2C_SLOT_WAIT_RECEIVE,
+    I2C_SLOT_RECEIVING,
     I2C_SLOT_ERROR
 } I2c_SlotStateTypeDef;
 

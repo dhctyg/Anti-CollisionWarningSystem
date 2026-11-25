@@ -1,5 +1,6 @@
 /Objects/
 /Listings/
 /.vscode/
+NOTE.md
 *.o
 *.uvguix.*
