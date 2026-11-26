@@ -20,6 +20,7 @@ typedef struct
     uint8_t is_enclosed;
 } I2c_MsgSlotTypeDef;
 
+/* 工作状态枚举 */
 typedef enum
 {
     I2C_WAIT_SEND_SB,
@@ -111,13 +112,19 @@ uint8_t I2cBus_ReadReg(const I2c_ReadRequestTypeDef *message)
 /* 槽任务处理函数 */
 void I2cBus_TaskHandle(void)
 {
-    uint32_t primask_state;
+    /* 公共变量 */
     I2c_MsgSlotTypeDef *slot;
-    /* 未接收字节的长度，应用于 RECEIVING 状态 */
+    /* 状态处理部分变量 */
+    uint32_t primask_state;
     uint16_t remain_length;
-    /* 应用于选槽 */
-    static int device = 0;
     static I2c_WorkStateTypeDef work_state;
+    /* 选槽部分变量 */
+    static int device;
+    /* 超时错误检测变量 */
+    static uint32_t last_progress_time;
+    static uint8_t timeout_check_state;
+    static uint8_t time_update_mark;
+    uint16_t errors;
 
     /* 选槽部分 */
     if(device == I2C_DEVICE_COUNT)
@@ -132,7 +139,32 @@ void I2cBus_TaskHandle(void)
         return;
     }
 
+
+    /* 超时与错误处理部分，不处于空闲状态时进入这里 */
+    errors = (I2C_CHANNEL->SR1 & (I2C_SR1_AF | I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_OVR));
+
+    if(time_update_mark != 0U)
+    {
+        last_progress_time = BSP_GetUptime_ms();
+        time_update_mark = 0U;
+    }
+    if(errors != 0U)
+    {
+        slot->slot_state = I2C_SLOT_ERROR;
+    }
+    if(I2C_SLOT_WAIT_TIMEOUT < (uint32_t)(BSP_GetUptime_ms() - last_progress_time) &&
+       timeout_check_state != 0U)
+    {
+        slot->slot_state = I2C_SLOT_ERROR;
+    }
+
+
     /* 状态处理 */
+    if(timeout_check_state == 0U)
+    {
+        last_progress_time = BSP_GetUptime_ms();
+        timeout_check_state = 1U;
+    }
     switch(slot->slot_state)
     {
         case I2C_SLOT_IDLE:
@@ -148,6 +180,8 @@ void I2cBus_TaskHandle(void)
             /* 先写入 START 控制位，再修改状态 */
             I2C_GenerateSTART(I2C_CHANNEL, ENABLE);
             work_state = I2C_WAIT_SEND_SB;
+            last_progress_time = BSP_GetUptime_ms();
+            time_update_mark = 1U;
             slot->slot_state = I2C_SLOT_SENDING;
 
         case I2C_SLOT_SENDING:
@@ -164,6 +198,7 @@ void I2cBus_TaskHandle(void)
                     I2C_Send7bitAddress(I2C_CHANNEL,
                                         (uint8_t)(slot->address << 1),
                                         I2C_Direction_Transmitter);
+                    time_update_mark = 1U;
                     work_state = I2C_WAIT_ADDR;
                     return;
                 
@@ -190,7 +225,7 @@ void I2cBus_TaskHandle(void)
                         I2C_SendData(I2C_CHANNEL, slot->msg[slot->index]);
                         slot->index ++;
                     }
-
+                    time_update_mark = 1U;
                     work_state = I2C_WAIT_BTF;
                     return;
 
@@ -205,6 +240,7 @@ void I2cBus_TaskHandle(void)
                         /* 读数据状态用重复发送 START 保持总线所有权 */
                         I2C_GenerateSTART(I2C_CHANNEL, ENABLE);
                         work_state = I2C_WAIT_SEND_SB;
+                        time_update_mark = 1U;
                         slot->slot_state = I2C_SLOT_WAIT_RECEIVE;
                         return;
                     }
@@ -212,12 +248,14 @@ void I2cBus_TaskHandle(void)
                     if(slot->index < slot->length)
                     {
                         I2C_SendData(I2C_CHANNEL, slot->msg[slot->index]);
+                        time_update_mark = 1U;
                         slot->index ++;
                         return;
                     }
 
                     /* 传输完成 */
                     I2C_GenerateSTOP(I2C_CHANNEL, ENABLE);
+                    time_update_mark = 1U;
                     work_state = I2C_WAIT_STOP;
                     return;
 
@@ -229,6 +267,7 @@ void I2cBus_TaskHandle(void)
                     }
                     /* 若停止位置位，则记录时间并修改状态 */
                     device ++;
+                    timeout_check_state = 0U;
                     slot->slot_state = I2C_SLOT_IDLE; 
 
                 default:
@@ -254,6 +293,7 @@ void I2cBus_TaskHandle(void)
                                         (uint8_t)(slot->address << 1),
                                         I2C_Direction_Receiver);
                     /* 更新状态 */
+                    time_update_mark = 1U;
                     work_state = I2C_WAIT_ADDR;
                     return;
 
@@ -287,6 +327,7 @@ void I2cBus_TaskHandle(void)
                     __set_PRIMASK(primask_state);
 
                     /* 更新状态 */
+                    time_update_mark = 1U;
                     work_state = I2C_WAIT_RX;
                     slot->slot_state = I2C_SLOT_RECEIVING;
                     return;
@@ -310,6 +351,7 @@ void I2cBus_TaskHandle(void)
                         /* 读取一位数据后更新 index */
                         slot->msg[slot->index] = I2C_ReceiveData(I2C_CHANNEL);
                         slot->index ++;
+                        time_update_mark = 1U;
                         return;
                     }
                     /* 剩余字节数等于 3，需要修改 NACK 标志位，以结束读取 */
@@ -330,6 +372,7 @@ void I2cBus_TaskHandle(void)
                         slot->msg[slot->index] = I2C_ReceiveData(I2C_CHANNEL);
                         slot->index ++;
                         __set_PRIMASK(primask_state);
+                        time_update_mark = 1U;
                         return;
                     }
                     else if(remain_length == 2U)
@@ -344,6 +387,7 @@ void I2cBus_TaskHandle(void)
                         slot->msg[slot->index] = I2C_ReceiveData(I2C_CHANNEL);
                         slot->index ++;
                         __set_PRIMASK(primask_state);
+                        time_update_mark = 1U;
                         return;
                     }
                     else if(remain_length == 1U)
@@ -357,6 +401,7 @@ void I2cBus_TaskHandle(void)
                         /* 全部读取完，index 归零 */
                         slot->index = 0U;
                         slot->is_enclosed = 0U;
+                        time_update_mark = 1U;
                         work_state = I2C_WAIT_STOP;
                         return;
                     }
@@ -377,13 +422,75 @@ void I2cBus_TaskHandle(void)
                     device ++;
                     memcpy(slot->read_data, slot->msg, slot->length);
                     slot->read_length = slot->length;
+                    timeout_check_state = 0U;
                     slot->slot_state = I2C_SLOT_IDLE;
                     return;
 
                 default:
                     return;
             }
+
         case I2C_SLOT_ERROR:
-            /* 待实现 */
+            if(errors == I2C_SR1_AF &&
+               (I2C_CHANNEL->CR1 & (I2C_CR1_START | I2C_CR1_STOP)) == 0U &&
+               I2C_GetFlagStatus(I2C_CHANNEL, I2C_FLAG_MSL) == SET)
+            {
+                /* 应答失败且 START 和 STOP 均未置位且处于主机状态，请求 STOP 并清除标志位 */
+                I2C_GenerateSTOP(I2C_CHANNEL, ENABLE);
+                I2C_ClearFlag(I2C_CHANNEL, I2C_FLAG_AF);
+                /* 等待 STOP 完成，同时检测超时 */
+                last_progress_time = BSP_GetUptime_ms();
+                return;
+            }
+            if(errors == 0U &&
+               (I2C_CHANNEL->CR1 & I2C_CR1_STOP) != 0U &&
+               (uint32_t)(BSP_GetUptime_ms() - last_progress_time) < I2C_SLOT_WAIT_TIMEOUT)
+            {
+                /* 等待 STOP 置位 */
+                return;
+            }
+            if (errors != 0U ||
+               (I2C_CHANNEL->CR1 & (I2C_CR1_START | I2C_CR1_STOP)) != 0U ||
+               I2C_GetFlagStatus(I2C_CHANNEL, I2C_FLAG_MSL) == SET)
+            {
+                /* 存在错误或控制操作未完成或处于主机状态，强制复位 */
+                BSP_I2cReset();
+            }
+            else
+            {
+                I2C_NACKPositionConfig(I2C_CHANNEL, I2C_NACKPosition_Current);
+                I2C_AcknowledgeConfig(I2C_CHANNEL, ENABLE);
+            }
+
+            slot->index = 0U;
+            slot->slot_state = I2C_SLOT_IDLE;
+            timeout_check_state = 0U;
+            time_update_mark = 0U;
+            device++;
+            return;
+        }
+}
+
+uint8_t I2cBus_GetReadMsg(I2c_DeviceTypeDef device, uint8_t *buffer)
+{
+    I2c_MsgSlotTypeDef *slot;
+
+    if(device >= I2C_DEVICE_COUNT || buffer == NULL)
+    {
+        return 0U;
     }
+
+    slot = &i2c_msg_slot[device];
+
+    if(slot->is_enclosed == 0U && slot->read_length != 0U)
+    {
+        memcpy(buffer, slot->read_data, slot->read_length);
+        slot->is_enclosed = 1U;
+        return 1U;
+    }
+    else
+    {
+        return 0U;
+    }
+
 }

@@ -54,8 +54,6 @@ void I2cBus_TaskHandle(void);
 uint8_t I2cBus_SendReg(const I2c_SendRequestTypeDef *message);
 uint8_t I2cBus_ReadReg(const I2c_ReadRequestTypeDef *message);
 /* GetReadMsg 用于读取最近一次向某设备读取的数据 */
-uint16_t I2cBus_GetReadMsg(uint8_t address, uint8_t *buffer);
-/* GetMsgTime 用于读取最近一次读取数据更新的时间，用于判断两次读取的数据是否相同，还应包含相同值的二次判断 */
-uint32_t I2cBus_GetMsgTime(uint8_t address);
+uint8_t I2cBus_GetReadMsg(I2c_DeviceTypeDef device, uint8_t *buffer);
 
 #endif
